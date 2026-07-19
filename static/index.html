@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>文本内容安全检测</title><link rel="stylesheet" href="/static/style.css">
+</head>
+<body><main class="shell">
+  <header><div class="brand"><span class="logo">安</span><div><h1>文本内容安全检测</h1><p>内容仅在本地处理，不会上传到互联网</p></div></div><a class="admin-link" href="/admin">管理入口</a></header>
+  <section class="card">
+    <div class="tabs"><button class="tab active">文本检测</button><label class="tab upload">上传 TXT / Word<input id="file" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label></div>
+    <textarea id="text" maxlength="1000000" placeholder="请粘贴需要检测的文本，或上传 UTF-8 文本文件……"></textarea>
+    <div class="replace-options"><label>未指定词条的替换内容 <input id="replacement" value="*" maxlength="20" placeholder="例如：* 或 已脱敏"></label></div>
+    <div class="toolbar"><span id="counter">0 / 1,000,000</span><div><button id="clear" class="secondary">清空</button><button id="scan" class="primary">开始检测</button></div></div>
+  </section>
+  <section id="result" class="card result hidden"><div class="result-head"><div><span id="badge" class="badge"></span><h2 id="summary"></h2></div><button id="replace" class="secondary">一键替换并复制</button></div><p id="fileHint" class="file-hint hidden"></p><div id="matches" class="matches"></div></section>
+</main><div id="toast" class="toast"></div><script src="/static/app.js"></script></body></html>

@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+releases/
+*.tar
+tests/_qa_*
+tests/_download*
+tests/_headers.txt
+.DS_Store
+Thumbs.db
+*.docx
+data/words.json
