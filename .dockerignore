@@ -7,3 +7,16 @@ releases
 migration
 .env
 *.tar
+data/words.json
+data/*.doc
+data/*.docx
+data/*.xls
+data/*.xlsx
+data/*.csv
+data/*.tsv
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.csv
+*.tsv

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import json
 from urllib.parse import quote
 from pathlib import Path
 
@@ -14,13 +15,52 @@ from pydantic import BaseModel, Field
 from sensitive_filter import SensitiveWordFilter
 from sensitive_filter.semantic import review_with_ollama
 from sensitive_filter.docx_handler import replace_docx, scan_docx
+from sensitive_filter.xlsx_handler import replace_xlsx, scan_xlsx
 
 BASE_DIR = Path(__file__).resolve().parent
 WORDLIST = Path(os.getenv("SENSITIVE_WORDLIST", BASE_DIR / "data" / "words.json"))
-engine = SensitiveWordFilter.from_json(WORDLIST)
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "100"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+def load_word_entries() -> list[dict]:
+    data = json.loads(WORDLIST.read_text(encoding="utf-8"))
+    entries = data.get("words", data) if isinstance(data, dict) else data
+    if not isinstance(entries, list):
+        raise ValueError("词库必须是数组，或包含 words 数组的对象")
+    return entries
+
+
+def build_reverse_engine(entries: list[dict]) -> SensitiveWordFilter:
+    reverse_entries = []
+    for entry in entries:
+        word = str(entry.get("word", "")).strip()
+        replacement = str(entry.get("replacement", "")).strip()
+        if not word or not replacement:
+            continue
+        reverse_entries.append({
+            "word": replacement,
+            "replacement": word,
+            "category": entry.get("category", "未分类"),
+            "level": entry.get("level", 1),
+        })
+    return SensitiveWordFilter(reverse_entries)
+
+
+word_entries = load_word_entries()
+engine = SensitiveWordFilter(word_entries)
+reverse_engine = build_reverse_engine(word_entries)
 app = FastAPI(title="本地文本敏感词服务", version="1.0.0", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 admin_sessions: set[str] = set()
+
+
+@app.middleware("http")
+async def disable_ui_cache(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path == "/admin" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 class TextRequest(BaseModel):
@@ -82,6 +122,12 @@ def replace(payload: ReplaceRequest) -> dict:
     return {**result.to_dict(), "text": output}
 
 
+@app.post("/restore")
+def restore(payload: TextRequest) -> dict:
+    output, result = reverse_engine.replace(payload.text, "*", payload.min_level)
+    return {**result.to_dict(), "text": output}
+
+
 @app.post("/scan-file")
 async def scan_file(file: UploadFile = File(...), min_level: int = 1) -> dict:
     if min_level not in (1, 2, 3):
@@ -96,21 +142,26 @@ async def scan_file(file: UploadFile = File(...), min_level: int = 1) -> dict:
     return {"filename": file.filename, **engine.scan(text, min_level).to_dict()}
 
 
-def validate_docx(file: UploadFile, content: bytes) -> None:
-    if not file.filename or not file.filename.lower().endswith(".docx"):
-        raise HTTPException(400, "目前仅支持 .docx，请将旧版 .doc 另存为 .docx")
-    if len(content) > 20_000_000:
-        raise HTTPException(413, "Word 文件不能超过 20 MB")
+async def read_upload(file: UploadFile, label: str) -> bytes:
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"{label}文件不能超过 {MAX_UPLOAD_MB} MB")
+    return content
+
+
+def validate_office_file(file: UploadFile, content: bytes, extension: str, label: str) -> None:
+    if not file.filename or not file.filename.lower().endswith(extension):
+        raise HTTPException(400, f"目前仅支持 {extension} 格式的{label}文件")
     if not content.startswith(b"PK"):
-        raise HTTPException(400, "文件不是有效的 DOCX 文档")
+        raise HTTPException(400, f"文件不是有效的 {extension.upper()} 文档")
 
 
 @app.post("/scan-docx")
 async def scan_word_file(file: UploadFile = File(...), min_level: int = 1) -> dict:
     if min_level not in (1, 2, 3):
         raise HTTPException(400, "min_level 只能是 1、2、3")
-    content = await file.read(20_000_001)
-    validate_docx(file, content)
+    content = await read_upload(file, "Word ")
+    validate_office_file(file, content, ".docx", "Word ")
     try:
         return {"filename": file.filename, **scan_docx(content, engine, min_level)}
     except Exception as exc:
@@ -123,8 +174,8 @@ async def replace_word_file(
 ) -> StreamingResponse:
     if min_level not in (1, 2, 3) or not replacement or len(replacement) > 20:
         raise HTTPException(400, "替换参数无效")
-    content = await file.read(20_000_001)
-    validate_docx(file, content)
+    content = await read_upload(file, "Word ")
+    validate_office_file(file, content, ".docx", "Word ")
     try:
         output, _ = replace_docx(content, engine, replacement, min_level)
     except Exception as exc:
@@ -135,6 +186,77 @@ async def replace_word_file(
         iter([output]),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename=filtered.docx; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@app.post("/restore-docx")
+async def restore_word_file(file: UploadFile = File(...), min_level: int = 1) -> StreamingResponse:
+    if min_level not in (1, 2, 3):
+        raise HTTPException(400, "min_level 只能是 1、2、3")
+    content = await read_upload(file, "Word ")
+    validate_office_file(file, content, ".docx", "Word ")
+    try:
+        output, _ = replace_docx(content, reverse_engine, "*", min_level)
+    except Exception as exc:
+        raise HTTPException(400, f"无法恢复 Word 文档：{exc}") from exc
+    filename = f"{Path(file.filename).stem}_restored.docx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        iter([output]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=restored.docx; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@app.post("/scan-xlsx")
+async def scan_excel_file(file: UploadFile = File(...), min_level: int = 1) -> dict:
+    if min_level not in (1, 2, 3):
+        raise HTTPException(400, "min_level 只能是 1、2、3")
+    content = await read_upload(file, "Excel ")
+    validate_office_file(file, content, ".xlsx", "Excel ")
+    try:
+        return {"filename": file.filename, **scan_xlsx(content, engine, min_level)}
+    except Exception as exc:
+        raise HTTPException(400, f"无法读取 Excel 工作簿：{exc}") from exc
+
+
+@app.post("/replace-xlsx")
+async def replace_excel_file(
+    file: UploadFile = File(...), replacement: str = "*", min_level: int = 1
+) -> StreamingResponse:
+    if min_level not in (1, 2, 3) or not replacement or len(replacement) > 20:
+        raise HTTPException(400, "替换参数无效")
+    content = await read_upload(file, "Excel ")
+    validate_office_file(file, content, ".xlsx", "Excel ")
+    try:
+        output, _ = replace_xlsx(content, engine, replacement, min_level)
+    except Exception as exc:
+        raise HTTPException(400, f"无法处理 Excel 工作簿：{exc}") from exc
+    filename = f"{Path(file.filename).stem}_filtered.xlsx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        iter([output]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=filtered.xlsx; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@app.post("/restore-xlsx")
+async def restore_excel_file(file: UploadFile = File(...), min_level: int = 1) -> StreamingResponse:
+    if min_level not in (1, 2, 3):
+        raise HTTPException(400, "min_level 只能是 1、2、3")
+    content = await read_upload(file, "Excel ")
+    validate_office_file(file, content, ".xlsx", "Excel ")
+    try:
+        output, _ = replace_xlsx(content, reverse_engine, "*", min_level)
+    except Exception as exc:
+        raise HTTPException(400, f"无法恢复 Excel 工作簿：{exc}") from exc
+    filename = f"{Path(file.filename).stem}_restored.xlsx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        iter([output]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=restored.xlsx; filename*=UTF-8''{encoded_filename}"},
     )
 
 
@@ -171,16 +293,39 @@ def admin_logout(response: Response, admin_session: str | None = Cookie(default=
 @app.get("/admin/words", include_in_schema=False)
 def get_words(admin_session: str | None = Cookie(default=None)) -> dict:
     require_admin(admin_session)
-    import json
     return json.loads(WORDLIST.read_text(encoding="utf-8"))
+
+
+def validate_word_entries(entries: list[dict]) -> None:
+    seen_words: set[str] = set()
+    seen_replacements: set[str] = set()
+    normalized_words = {str(item.get("word", "")).strip().casefold() for item in entries}
+
+    for entry in entries:
+        word = str(entry.get("word", "")).strip()
+        replacement = str(entry.get("replacement", "")).strip()
+        normalized_word = word.casefold()
+        normalized_replacement = replacement.casefold()
+        if normalized_word in seen_words:
+            raise HTTPException(409, "敏感词已添加")
+        seen_words.add(normalized_word)
+        if not replacement:
+            continue
+        if normalized_replacement in seen_replacements:
+            raise HTTPException(409, "替换词存在重复情况，请修改")
+        if normalized_replacement in normalized_words:
+            raise HTTPException(409, "替换词与敏感词存在重复情况，请修改")
+        seen_replacements.add(normalized_replacement)
 
 
 @app.put("/admin/words", include_in_schema=False)
 def save_words(payload: WordListRequest, admin_session: str | None = Cookie(default=None)) -> dict:
     require_admin(admin_session)
-    import json
-    global engine
+    global engine, reverse_engine, word_entries
     data = {"words": [item.model_dump() for item in payload.words]}
+    validate_word_entries(data["words"])
     WORDLIST.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     engine = SensitiveWordFilter(data["words"])
+    reverse_engine = build_reverse_engine(data["words"])
+    word_entries = data["words"]
     return {"ok": True, "count": len(data["words"])}

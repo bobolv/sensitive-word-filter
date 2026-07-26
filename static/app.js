@@ -1,9 +1,205 @@
-const text=document.querySelector('#text'),counter=document.querySelector('#counter'),result=document.querySelector('#result'),toast=document.querySelector('#toast');let wordFile=null;
-const notify=m=>{toast.textContent=m;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),1800)};
-text.oninput=()=>counter.textContent=`${text.value.length.toLocaleString()} / 1,000,000`;
-document.querySelector('#clear').onclick=()=>{text.value='';wordFile=null;text.placeholder='请粘贴需要检测的文本，或上传 UTF-8 文本文件……';text.oninput();result.classList.add('hidden')};
-document.querySelector('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.name.toLowerCase().endsWith('.docx')){wordFile=f;text.value='';text.placeholder=`正在读取 Word 文档：${f.name}…`;text.oninput();notify(`正在读取 ${f.name}`);document.querySelector('#scan').click()}else{wordFile=null;text.value=await f.text();text.oninput();notify(`已载入 ${f.name}`)}};
-document.querySelector('#scan').onclick=async()=>{if(!wordFile&&!text.value.trim())return notify('请先输入文本或上传文件');const b=document.querySelector('#scan');b.disabled=true;b.textContent='检测中…';try{let r;if(wordFile){const form=new FormData();form.append('file',wordFile);r=await fetch('/scan-docx',{method:'POST',body:form})}else{r=await fetch('/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text.value,min_level:1})})}const d=await r.json();if(!r.ok)throw new Error(d.detail||'检测失败');if(wordFile){text.value=d.text;text.oninput()}showResult(d)}catch(e){notify(e.message||'检测失败')}finally{b.disabled=false;b.textContent='开始检测'}};
-function showResult(d){result.classList.remove('hidden');const badge=document.querySelector('#badge'),hint=document.querySelector('#fileHint'),replace=document.querySelector('#replace');badge.className=`badge ${d.sensitive?'risk':'safe'}`;document.querySelector('#summary').textContent=d.sensitive?`发现 ${d.count} 处风险内容`:'未发现敏感内容';document.querySelector('#matches').innerHTML=d.matches.map(x=>`<span class="match">${escapeHtml(x.matched_text)} · ${escapeHtml(x.category)} · L${x.level}</span>`).join('');if(wordFile){hint.textContent=`Word 文档：${wordFile.name}。替换后将下载新文件，原文档不会被覆盖。`;hint.classList.remove('hidden');replace.textContent='替换并下载 Word'}else{hint.classList.add('hidden');replace.textContent='一键替换并复制'}}
-document.querySelector('#replace').onclick=async()=>{const replacement=document.querySelector('#replacement').value.trim()||'*';if(wordFile){const form=new FormData();form.append('file',wordFile);const r=await fetch(`/replace-docx?replacement=${encodeURIComponent(replacement)}&min_level=1`,{method:'POST',body:form});if(!r.ok){const d=await r.json().catch(()=>({}));return notify(d.detail||'Word 处理失败')}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=wordFile.name.replace(/\.docx$/i,'_filtered.docx');a.click();URL.revokeObjectURL(url);notify('替换后的 Word 已保存')}else{const r=await fetch('/replace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text.value,min_level:1,replacement})});const d=await r.json();text.value=d.text;text.oninput();await navigator.clipboard.writeText(d.text);notify('已替换并复制到剪贴板')}};
-function escapeHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+const text = document.querySelector("#text");
+const counter = document.querySelector("#counter");
+const result = document.querySelector("#result");
+const toast = document.querySelector("#toast");
+const scanButton = document.querySelector("#scan");
+let uploadedFile = null;
+let fileKind = null;
+
+const notify = (message, duration = 2400) => {
+  toast.textContent = message;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), duration);
+};
+
+text.oninput = () => {
+  counter.textContent = `${text.value.length.toLocaleString()} 字符`;
+};
+
+document.querySelector("#clear").onclick = () => {
+  text.value = "";
+  text.placeholder = "请粘贴需要检测的文本，或上传 TXT、DOCX、XLSX 文件……";
+  uploadedFile = null;
+  fileKind = null;
+  document.querySelector("#file").value = "";
+  text.oninput();
+  result.classList.add("hidden");
+};
+
+document.querySelector("#file").onchange = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith(".docx")) fileKind = "docx";
+  else if (lowerName.endsWith(".xlsx")) fileKind = "xlsx";
+  else fileKind = "txt";
+
+  if (fileKind === "txt") {
+    uploadedFile = null;
+    text.value = await file.text();
+    text.oninput();
+    notify(`已载入 ${file.name}`);
+    return;
+  }
+
+  uploadedFile = file;
+  text.value = "";
+  text.placeholder = `正在读取 ${file.name}，大文件可能需要一些时间……`;
+  text.oninput();
+  await scanUploadedFile();
+};
+
+async function scanUploadedFile() {
+  if (!uploadedFile || !fileKind) return;
+  setBusy(true, "读取并检测中…");
+  try {
+    const form = new FormData();
+    form.append("file", uploadedFile);
+    const response = await fetch(`/scan-${fileKind}`, { method: "POST", body: form });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "文件检测失败");
+    text.value = data.text_preview || "";
+    text.oninput();
+    showResult(data);
+  } catch (error) {
+    notify(error.message || "文件检测失败", 4000);
+  } finally {
+    setBusy(false);
+  }
+}
+
+scanButton.onclick = async () => {
+  if (uploadedFile) return scanUploadedFile();
+  if (!text.value.trim()) return notify("请先输入文本或上传文件");
+  setBusy(true, "检测中…");
+  try {
+    const response = await fetch("/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text.value, min_level: 1 }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "检测失败");
+    showResult(data);
+  } catch (error) {
+    notify(error.message || "检测失败", 4000);
+  } finally {
+    setBusy(false);
+  }
+};
+
+function setBusy(busy, label = "开始检测") {
+  scanButton.disabled = busy;
+  scanButton.textContent = busy ? label : "开始检测";
+}
+
+function showResult(data) {
+  result.classList.remove("hidden");
+  const badge = document.querySelector("#badge");
+  const hint = document.querySelector("#fileHint");
+  const replace = document.querySelector("#replace");
+  const restore = document.querySelector("#restore");
+  badge.className = `badge ${data.sensitive ? "risk" : "safe"}`;
+  document.querySelector("#summary").textContent = data.sensitive
+    ? `发现 ${data.count.toLocaleString()} 处风险内容`
+    : "未发现敏感内容";
+
+  document.querySelector("#matches").innerHTML = data.matches.map((item) => {
+    const location = item.sheet ? `${item.sheet}!${item.cell} · ` : "";
+    return `<span class="match">${escapeHtml(location)}${escapeHtml(item.matched_text)} · ${escapeHtml(item.category)} · L${item.level}</span>`;
+  }).join("");
+
+  if (uploadedFile) {
+    const kindName = fileKind === "docx" ? "Word" : "Excel";
+    const previewNote = data.text_truncated
+      ? ` 文档共 ${data.text_length.toLocaleString()} 个文本字符，页面仅显示前 ${text.value.length.toLocaleString()} 个；检测和替换仍处理全部内容。`
+      : "";
+    const matchNote = data.matches_truncated ? " 命中列表较长，页面仅显示前 2,000 条。" : "";
+    hint.textContent = `${kindName} 文件：${uploadedFile.name}。替换后将下载新文件，原文件不会被覆盖。${previewNote}${matchNote}`;
+    hint.classList.remove("hidden");
+    replace.textContent = `替换并下载 ${kindName}`;
+    restore.textContent = `反向恢复并下载 ${kindName}`;
+  } else {
+    hint.classList.add("hidden");
+    replace.textContent = "执行替换";
+    restore.textContent = "反向恢复";
+  }
+}
+
+document.querySelector("#replace").onclick = async () => {
+  const replacement = document.querySelector("#replacement").value.trim() || "*";
+  if (uploadedFile) {
+    const form = new FormData();
+    form.append("file", uploadedFile);
+    notify("正在生成替换后的文件，请稍候…", 3000);
+    const response = await fetch(
+      `/replace-${fileKind}?replacement=${encodeURIComponent(replacement)}&min_level=1`,
+      { method: "POST", body: form },
+    );
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      return notify(data.detail || "文件处理失败", 4000);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = uploadedFile.name.replace(/\.(docx|xlsx)$/i, "_filtered.$1");
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify("替换后的文件已保存");
+    return;
+  }
+
+  const response = await fetch("/replace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text.value, min_level: 1, replacement }),
+  });
+  const data = await response.json();
+  text.value = data.text;
+  text.oninput();
+  notify(data.count ? `已替换 ${data.count} 处` : "未发现需要替换的敏感词");
+};
+
+document.querySelector("#restore").onclick = async () => {
+  if (uploadedFile) {
+    const form = new FormData();
+    form.append("file", uploadedFile);
+    notify("正在按词库对应关系恢复文件，请稍候…", 3000);
+    const response = await fetch(`/restore-${fileKind}?min_level=1`, {
+      method: "POST", body: form,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      return notify(data.detail || "文件恢复失败", 4000);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = uploadedFile.name.replace(/\.(docx|xlsx)$/i, "_restored.$1");
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify("恢复后的文件已保存");
+    return;
+  }
+
+  if (!text.value.trim()) return notify("请先输入需要恢复的文本");
+  const response = await fetch("/restore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text.value, min_level: 1 }),
+  });
+  const data = await response.json();
+  if (!response.ok) return notify(data.detail || "恢复失败");
+  text.value = data.text;
+  text.oninput();
+  notify(data.count ? `已恢复 ${data.count} 处` : "未发现可恢复的替换词");
+};
+
+function escapeHtml(value) {
+  const element = document.createElement("div");
+  element.textContent = String(value);
+  return element.innerHTML;
+}

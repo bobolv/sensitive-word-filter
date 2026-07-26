@@ -1,16 +1,53 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>文本内容安全检测</title><link rel="stylesheet" href="/static/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>文本内容安全检测</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/user.css">
 </head>
-<body><main class="shell">
-  <header><div class="brand"><span class="logo">安</span><div><h1>文本内容安全检测</h1><p>内容仅在本地处理，不会上传到互联网</p></div></div><a class="admin-link" href="/admin">管理入口</a></header>
+<body>
+<main class="shell">
+  <header>
+    <div class="brand">
+      <span class="logo">安</span>
+      <div><h1>文本内容安全检测</h1><p>内容仅在本地处理，不会上传到互联网</p></div>
+    </div>
+    <a class="admin-link" href="/admin">管理入口</a>
+  </header>
   <section class="card">
-    <div class="tabs"><button class="tab active">文本检测</button><label class="tab upload">上传 TXT / Word<input id="file" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label></div>
-    <textarea id="text" maxlength="1000000" placeholder="请粘贴需要检测的文本，或上传 UTF-8 文本文件……"></textarea>
-    <div class="replace-options"><label>未指定词条的替换内容 <input id="replacement" value="*" maxlength="20" placeholder="例如：* 或 已脱敏"></label></div>
-    <div class="toolbar"><span id="counter">0 / 1,000,000</span><div><button id="clear" class="secondary">清空</button><button id="scan" class="primary">开始检测</button></div></div>
+    <div class="tabs">
+      <button class="tab active">文本检测</button>
+      <label class="tab upload">上传 TXT / Word / Excel
+        <input id="file" type="file" accept=".txt,.docx,.xlsx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </label>
+    </div>
+    <textarea id="text" placeholder="请粘贴需要检测的文本，或上传 TXT、DOCX、XLSX 文件……"></textarea>
+    <div class="replace-options">
+      <label>未指定词条的替换内容
+        <input id="replacement" value="*" maxlength="20" placeholder="例如：* 或 已脱敏">
+      </label>
+    </div>
+    <p class="file-mode-note">上传 Word 或 Excel 时，只替换文字并保留源文件总体格式，处理结果将另存为同类型新文件。</p>
+    <div class="toolbar">
+      <span id="counter">0 字符</span>
+      <div><button id="clear" class="secondary">清空</button><button id="scan" class="primary">开始检测</button></div>
+    </div>
   </section>
-  <section id="result" class="card result hidden"><div class="result-head"><div><span id="badge" class="badge"></span><h2 id="summary"></h2></div><button id="replace" class="secondary">一键替换并复制</button></div><p id="fileHint" class="file-hint hidden"></p><div id="matches" class="matches"></div></section>
-</main><div id="toast" class="toast"></div><script src="/static/app.js"></script></body></html>
+  <section id="result" class="card result hidden">
+    <div class="result-head">
+      <div><span id="badge" class="badge"></span><h2 id="summary"></h2></div>
+      <div class="result-actions">
+        <button id="replace" class="secondary">执行替换</button>
+        <button id="restore" class="secondary restore-button">反向恢复</button>
+      </div>
+    </div>
+    <p id="fileHint" class="file-hint hidden"></p>
+    <div id="matches" class="matches"></div>
+  </section>
+</main>
+<div id="toast" class="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

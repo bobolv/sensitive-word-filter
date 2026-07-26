@@ -1,3 +1,51 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>词库管理</title><link rel="stylesheet" href="/static/style.css"></head><body>
-<main class="shell"><section id="login" class="card login"><h1>维护人员登录</h1><p>请输入管理员密码以维护本地敏感词库。</p><input id="password" class="field" type="password" placeholder="管理员密码"><button id="loginBtn" class="primary">登录</button></section>
-<section id="manager" class="hidden"><header><div><h1>敏感词库管理</h1><p>指定替换词优先于用户输入的统一替换内容</p></div><button id="logout" class="secondary">退出登录</button></header><div class="card"><div class="admin-actions"><button id="add" class="secondary">添加词条</button><button id="save" class="primary">保存词库</button></div><table class="admin-table"><thead><tr><th>敏感词</th><th>分类</th><th>等级</th><th>指定替换词（可空）</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></section></main><div id="toast" class="toast"></div><script src="/static/admin.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>词库管理</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+<main class="shell">
+  <section id="login" class="card login">
+    <h1>维护人员登录</h1>
+    <p>请输入管理员密码以维护本地敏感词库。</p>
+    <input id="password" class="field" type="password" placeholder="管理员密码">
+    <button id="loginBtn" class="primary">登录</button>
+  </section>
+  <section id="manager" class="hidden">
+    <header>
+      <div><h1>敏感词库管理</h1><p>替换词必须唯一，才能安全执行反向恢复</p></div>
+      <button id="logout" class="secondary">退出登录</button>
+    </header>
+    <section class="card word-editor">
+      <h2>添加新词条</h2>
+      <div class="editor-grid">
+        <label>敏感词<input id="newWord" placeholder="必填"></label>
+        <label>分类<input id="newCategory" value="未分类"></label>
+        <label>等级<select id="newLevel"><option>1</option><option>2</option><option>3</option></select></label>
+        <label>指定替换词<input id="newReplacement" placeholder="可空，例如：某人员"></label>
+        <button id="add" class="primary">添加到词库</button>
+      </div>
+      <p class="editor-note">敏感词不能重复；替换词不能重复，也不能与任一敏感词相同。</p>
+    </section>
+    <section class="card">
+      <div class="admin-actions">
+        <strong id="wordCount">词条列表</strong>
+        <button id="save" class="primary">保存词库</button>
+      </div>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>敏感词</th><th>分类</th><th>等级</th><th>指定替换词（可空）</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</main>
+<div id="toast" class="toast"></div>
+<script src="/static/admin.js"></script>
+</body>
+</html>
