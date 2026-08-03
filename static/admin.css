@@ -4,6 +4,10 @@
 .editor-grid input,.editor-grid select{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #d0d5dd;border-radius:7px;background:#fff}
 .editor-note{font-size:13px;color:#667085;margin:12px 0 0}
 .admin-actions{align-items:center}
+.admin-actions .edit-tip{margin-right:auto;margin-left:12px;font-size:13px;color:#667085}
 .table-scroll{overflow:auto;max-height:62vh}
 .admin-table thead{position:sticky;top:0;background:#fff;z-index:1}
+.admin-table input:disabled,.admin-table select:disabled{color:#344054;background:transparent;border-color:transparent;opacity:1}
+.admin-table tr.editing{background:#f0f9f6}
+.row-actions{display:flex;gap:8px;white-space:nowrap}
 @media(max-width:800px){.editor-grid{grid-template-columns:1fr 1fr}.editor-grid button{width:100%}}

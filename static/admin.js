@@ -14,23 +14,68 @@ function row(entry = { word: "", category: "未分类", level: 1, replacement: "
   tr.innerHTML = `<td><input class="word"></td><td><input class="category"></td>
     <td><select class="level"><option>1</option><option>2</option><option>3</option></select></td>
     <td><input class="replacement" placeholder="例如：某人员"></td>
-    <td><button class="secondary remove">删除</button></td>`;
+    <td class="row-actions"><button class="secondary edit">修改</button><button class="secondary remove">删除</button></td>`;
   tr.querySelector(".word").value = entry.word;
   tr.querySelector(".category").value = entry.category;
   tr.querySelector(".level").value = entry.level;
   tr.querySelector(".replacement").value = entry.replacement || "";
+  setEditing(tr, false);
+  tr.querySelector(".edit").onclick = () => editRow(tr);
   tr.querySelector(".remove").onclick = () => { tr.remove(); updateCount(); };
   rows.append(tr);
   updateCount();
 }
 
-function collectWords() {
-  return [...rows.children].map((tr) => ({
+function setEditing(tr, editing) {
+  tr.querySelectorAll("input, select").forEach((control) => { control.disabled = !editing; });
+  tr.classList.toggle("editing", editing);
+}
+
+async function editRow(tr) {
+  const button = tr.querySelector(".edit");
+  if (!tr.classList.contains("editing")) {
+    tr.dataset.original = JSON.stringify(readRow(tr));
+    setEditing(tr, true);
+    button.textContent = "保存修改";
+    tr.querySelector(".word").focus();
+    return;
+  }
+
+  const original = JSON.parse(tr.dataset.original);
+  const entry = readRow(tr);
+  const proposedWords = collectWords();
+  const message = validationMessage(proposedWords);
+  if (!entry.word) return notify("请输入敏感词");
+  if (message) return notify(message);
+  button.disabled = true;
+  button.textContent = "正在保存…";
+  const response = await fetch("/admin/words", {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ original_word: original.word, entry }),
+  });
+  const data = await response.json().catch(() => ({}));
+  button.disabled = false;
+  if (!response.ok) {
+    button.textContent = "保存修改";
+    return notify(data.detail || "修改失败");
+  }
+  tr.dataset.original = JSON.stringify(entry);
+  setEditing(tr, false);
+  button.textContent = "修改";
+  notify("修改已保存，词库已立即生效");
+}
+
+function readRow(tr) {
+  return {
     word: tr.querySelector(".word").value.trim(),
     category: tr.querySelector(".category").value.trim() || "未分类",
     level: Number(tr.querySelector(".level").value),
     replacement: tr.querySelector(".replacement").value.trim(),
-  })).filter((entry) => entry.word);
+  };
+}
+
+function collectWords() {
+  return [...rows.children].map(readRow).filter((entry) => entry.word);
 }
 
 function validationMessage(entries) {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 import json
+import threading
 from urllib.parse import quote
 from pathlib import Path
 
@@ -51,6 +52,7 @@ reverse_engine = build_reverse_engine(word_entries)
 app = FastAPI(title="本地文本敏感词服务", version="1.0.0", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 admin_sessions: set[str] = set()
+wordlist_lock = threading.Lock()
 
 
 @app.middleware("http")
@@ -89,6 +91,11 @@ class WordEntry(BaseModel):
 
 class WordListRequest(BaseModel):
     words: list[WordEntry] = Field(max_length=100_000)
+
+
+class WordUpdateRequest(BaseModel):
+    original_word: str = Field(min_length=1, max_length=200)
+    entry: WordEntry
 
 
 def require_admin(admin_session: str | None) -> None:
@@ -318,14 +325,44 @@ def validate_word_entries(entries: list[dict]) -> None:
         seen_replacements.add(normalized_replacement)
 
 
+def activate_word_entries(entries: list[dict]) -> None:
+    """Validate, persist atomically, and switch the live matching engines."""
+    global engine, reverse_engine, word_entries
+    validate_word_entries(entries)
+    new_engine = SensitiveWordFilter(entries)
+    new_reverse_engine = build_reverse_engine(entries)
+    data = {"words": entries}
+    temporary_wordlist = WORDLIST.with_suffix(f"{WORDLIST.suffix}.tmp")
+    temporary_wordlist.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    temporary_wordlist.replace(WORDLIST)
+    engine = new_engine
+    reverse_engine = new_reverse_engine
+    word_entries = entries
+
+
 @app.put("/admin/words", include_in_schema=False)
 def save_words(payload: WordListRequest, admin_session: str | None = Cookie(default=None)) -> dict:
     require_admin(admin_session)
-    global engine, reverse_engine, word_entries
-    data = {"words": [item.model_dump() for item in payload.words]}
-    validate_word_entries(data["words"])
-    WORDLIST.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    engine = SensitiveWordFilter(data["words"])
-    reverse_engine = build_reverse_engine(data["words"])
-    word_entries = data["words"]
-    return {"ok": True, "count": len(data["words"])}
+    entries = [item.model_dump() for item in payload.words]
+    with wordlist_lock:
+        activate_word_entries(entries)
+    return {"ok": True, "count": len(entries)}
+
+
+@app.patch("/admin/words", include_in_schema=False)
+def update_word(payload: WordUpdateRequest, admin_session: str | None = Cookie(default=None)) -> dict:
+    require_admin(admin_session)
+    original_word = payload.original_word.strip().casefold()
+    with wordlist_lock:
+        entries = load_word_entries()
+        indexes = [
+            index for index, item in enumerate(entries)
+            if str(item.get("word", "")).strip().casefold() == original_word
+        ]
+        if not indexes:
+            raise HTTPException(404, "要修改的词条不存在，请刷新后重试")
+        entries[indexes[0]] = payload.entry.model_dump()
+        activate_word_entries(entries)
+    return {"ok": True, "count": len(entries), "word": payload.entry.word}
