@@ -379,7 +379,14 @@ def activate_word_entries(entries: list[dict]) -> None:
     temporary_wordlist.write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    temporary_wordlist.replace(WORDLIST)
+    try:
+        temporary_wordlist.replace(WORDLIST)
+    except OSError:
+        # Docker 单文件挂载不能被 rename/replace 覆盖，改为原位写入。
+        WORDLIST.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        temporary_wordlist.unlink(missing_ok=True)
     engine = new_engine
     reverse_engine = new_reverse_engine
     word_entries = entries

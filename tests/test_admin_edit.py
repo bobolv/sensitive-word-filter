@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -39,6 +40,20 @@ try:
             ]
             saved = json.loads(wordlist.read_text(encoding="utf-8"))
             assert saved["words"][0]["word"] == "新词"
+
+            # 模拟 Docker 单文件挂载不允许 replace，仍应能原位写入新增词条。
+            with patch("pathlib.Path.replace", side_effect=OSError("device busy")):
+                response = client.put(
+                    "/admin/words",
+                    json={"words": [
+                        {"word": "B机房", "category": "涉密", "level": 2, "replacement": "某机房"},
+                    ]},
+                )
+            assert response.status_code == 200, response.text
+            replaced = client.post(
+                "/replace", json={"text": "进入B机房", "min_level": 1, "replacement": "*"}
+            ).json()
+            assert replaced["text"] == "进入某机房"
 finally:
     application.WORDLIST = original_wordlist
     application.engine = original_engine

@@ -2,6 +2,19 @@ const login = document.querySelector("#login");
 const manager = document.querySelector("#manager");
 const rows = document.querySelector("#rows");
 const toast = document.querySelector("#toast");
+const categories = ["敏感", "项目", "涉密", "其他"];
+
+const normalizeCategory = (value) => categories.includes(value) ? value : "其他";
+
+function requireFreshLogin(response) {
+  if (response.status !== 401) return false;
+  manager.classList.add("hidden");
+  login.classList.remove("hidden");
+  document.querySelector("#password").value = "";
+  document.querySelector("#password").focus();
+  notify("登录状态已失效，请重新登录", 4000);
+  return true;
+}
 
 const notify = (message, duration = 2600) => {
   toast.textContent = message;
@@ -9,14 +22,14 @@ const notify = (message, duration = 2600) => {
   setTimeout(() => toast.classList.remove("show"), duration);
 };
 
-function row(entry = { word: "", category: "未分类", level: 1, replacement: "" }) {
+function row(entry = { word: "", category: "其他", level: 1, replacement: "" }) {
   const tr = document.createElement("tr");
-  tr.innerHTML = `<td><input class="word"></td><td><input class="category"></td>
+  tr.innerHTML = `<td><input class="word"></td><td><select class="category">${categories.map((item) => `<option>${item}</option>`).join("")}</select></td>
     <td><select class="level"><option>1</option><option>2</option><option>3</option></select></td>
     <td><input class="replacement" placeholder="例如：某人员"></td>
     <td class="row-actions"><button class="secondary edit">修改</button><button class="secondary remove">删除</button></td>`;
   tr.querySelector(".word").value = entry.word;
-  tr.querySelector(".category").value = entry.category;
+  tr.querySelector(".category").value = normalizeCategory(entry.category);
   tr.querySelector(".level").value = entry.level;
   tr.querySelector(".replacement").value = entry.replacement || "";
   setEditing(tr, false);
@@ -53,6 +66,7 @@ async function editRow(tr) {
     method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ original_word: original.word, entry }),
   });
+  if (requireFreshLogin(response)) return;
   const data = await response.json().catch(() => ({}));
   button.disabled = false;
   if (!response.ok) {
@@ -68,7 +82,7 @@ async function editRow(tr) {
 function readRow(tr) {
   return {
     word: tr.querySelector(".word").value.trim(),
-    category: tr.querySelector(".category").value.trim() || "未分类",
+    category: normalizeCategory(tr.querySelector(".category").value),
     level: Number(tr.querySelector(".level").value),
     replacement: tr.querySelector(".replacement").value.trim(),
   };
@@ -80,7 +94,6 @@ function collectWords() {
 
 function validationMessage(entries) {
   const words = new Set();
-  const replacements = new Set();
   const allWords = new Set(entries.map((entry) => entry.word.toLocaleLowerCase()));
   for (const entry of entries) {
     const word = entry.word.toLocaleLowerCase();
@@ -88,9 +101,7 @@ function validationMessage(entries) {
     if (words.has(word)) return "敏感词已添加";
     words.add(word);
     if (!replacement) continue;
-    if (replacements.has(replacement)) return "替换词存在重复情况，请修改";
     if (allWords.has(replacement)) return "替换词与敏感词存在重复情况，请修改";
-    replacements.add(replacement);
   }
   return "";
 }
@@ -101,6 +112,7 @@ function updateCount() {
 
 async function load() {
   const response = await fetch("/admin/words");
+  if (requireFreshLogin(response)) return;
   if (!response.ok) return;
   const data = await response.json();
   rows.innerHTML = "";
@@ -122,7 +134,7 @@ document.querySelector("#add").onclick = async () => {
   const addButton = document.querySelector("#add");
   const entry = {
     word: document.querySelector("#newWord").value.trim(),
-    category: document.querySelector("#newCategory").value.trim() || "未分类",
+    category: normalizeCategory(document.querySelector("#newCategory").value),
     level: Number(document.querySelector("#newLevel").value),
     replacement: document.querySelector("#newReplacement").value.trim(),
   };
@@ -137,6 +149,11 @@ document.querySelector("#add").onclick = async () => {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ words: proposedWords }),
   });
+  if (requireFreshLogin(response)) {
+    addButton.disabled = false;
+    addButton.textContent = "添加到词库";
+    return;
+  }
   const data = await response.json().catch(() => ({}));
   addButton.disabled = false;
   addButton.textContent = "添加到词库";
@@ -157,6 +174,7 @@ document.querySelector("#save").onclick = async () => {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ words }),
   });
+  if (requireFreshLogin(response)) return;
   const data = await response.json().catch(() => ({}));
   notify(response.ok ? "保存成功，已立即生效" : (data.detail || "保存失败"));
 };
