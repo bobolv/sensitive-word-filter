@@ -15,7 +15,12 @@ from pydantic import BaseModel, Field
 
 from sensitive_filter import SensitiveWordFilter
 from sensitive_filter.semantic import review_with_ollama
-from sensitive_filter.docx_handler import replace_docx, scan_docx
+from sensitive_filter.docx_handler import (
+    create_writing_template,
+    docx_to_markdown,
+    replace_docx,
+    scan_docx,
+)
 from sensitive_filter.xlsx_handler import replace_xlsx, scan_xlsx
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -212,6 +217,44 @@ async def restore_word_file(file: UploadFile = File(...), min_level: int = 1) ->
         iter([output]),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename=restored.docx; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@app.post("/replace-docx-markdown")
+async def replace_word_as_markdown(
+    file: UploadFile = File(...), replacement: str = "*", min_level: int = 1
+) -> StreamingResponse:
+    if min_level not in (1, 2, 3) or not replacement or len(replacement) > 20:
+        raise HTTPException(400, "替换参数无效")
+    content = await read_upload(file, "Word ")
+    validate_office_file(file, content, ".docx", "Word ")
+    try:
+        output, _ = docx_to_markdown(content, engine, replacement, min_level)
+    except Exception as exc:
+        raise HTTPException(400, f"无法将 Word 文档转换为 Markdown：{exc}") from exc
+    filename = f"{Path(file.filename).stem}_filtered.md"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        iter([output]),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=filtered.md; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@app.post("/template-docx")
+async def make_word_template(file: UploadFile = File(...)) -> StreamingResponse:
+    content = await read_upload(file, "Word ")
+    validate_office_file(file, content, ".docx", "Word ")
+    try:
+        output, _ = create_writing_template(content)
+    except Exception as exc:
+        raise HTTPException(400, f"无法生成 Word 编写模板：{exc}") from exc
+    filename = f"{Path(file.filename).stem}_template.docx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        iter([output]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=template.docx; filename*=UTF-8''{encoded_filename}"},
     )
 
 

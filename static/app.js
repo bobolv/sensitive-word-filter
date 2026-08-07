@@ -99,6 +99,7 @@ function showResult(data) {
   const hint = document.querySelector("#fileHint");
   const replace = document.querySelector("#replace");
   const restore = document.querySelector("#restore");
+  const wordTools = document.querySelectorAll(".word-tool");
   badge.className = `badge ${data.sensitive ? "risk" : "safe"}`;
   document.querySelector("#summary").textContent = data.sensitive
     ? `发现 ${data.count.toLocaleString()} 处风险内容`
@@ -119,11 +120,22 @@ function showResult(data) {
     hint.classList.remove("hidden");
     replace.textContent = `替换并下载 ${kindName}`;
     restore.textContent = `反向恢复并下载 ${kindName}`;
+    wordTools.forEach((button) => button.classList.toggle("hidden", fileKind !== "docx"));
   } else {
     hint.classList.add("hidden");
     replace.textContent = "执行替换";
     restore.textContent = "反向恢复";
+    wordTools.forEach((button) => button.classList.add("hidden"));
   }
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 document.querySelector("#replace").onclick = async () => {
@@ -140,13 +152,7 @@ document.querySelector("#replace").onclick = async () => {
       const data = await response.json().catch(() => ({}));
       return notify(data.detail || "文件处理失败", 4000);
     }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = uploadedFile.name.replace(/\.(docx|xlsx)$/i, "_filtered.$1");
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveBlob(await response.blob(), uploadedFile.name.replace(/\.(docx|xlsx)$/i, "_filtered.$1"));
     notify("替换后的文件已保存");
     return;
   }
@@ -174,13 +180,7 @@ document.querySelector("#restore").onclick = async () => {
       const data = await response.json().catch(() => ({}));
       return notify(data.detail || "文件恢复失败", 4000);
     }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = uploadedFile.name.replace(/\.(docx|xlsx)$/i, "_restored.$1");
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveBlob(await response.blob(), uploadedFile.name.replace(/\.(docx|xlsx)$/i, "_restored.$1"));
     notify("恢复后的文件已保存");
     return;
   }
@@ -196,6 +196,38 @@ document.querySelector("#restore").onclick = async () => {
   text.value = data.text;
   text.oninput();
   notify(data.count ? `已恢复 ${data.count} 处` : "未发现可恢复的替换词");
+};
+
+document.querySelector("#toMarkdown").onclick = async () => {
+  if (!uploadedFile || fileKind !== "docx") return notify("请先上传 Word 文件");
+  const replacement = document.querySelector("#replacement").value.trim() || "*";
+  const form = new FormData();
+  form.append("file", uploadedFile);
+  notify("正在替换敏感词并转换 Markdown，请稍候…", 3000);
+  const response = await fetch(
+    `/replace-docx-markdown?replacement=${encodeURIComponent(replacement)}&min_level=1`,
+    { method: "POST", body: form },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    return notify(data.detail || "Markdown 转换失败", 4000);
+  }
+  saveBlob(await response.blob(), uploadedFile.name.replace(/\.docx$/i, "_filtered.md"));
+  notify("替换后的 Markdown 文件已保存");
+};
+
+document.querySelector("#makeTemplate").onclick = async () => {
+  if (!uploadedFile || fileKind !== "docx") return notify("请先上传 Word 文件");
+  const form = new FormData();
+  form.append("file", uploadedFile);
+  notify("正在提取标题和表格结构，请稍候…", 3000);
+  const response = await fetch("/template-docx", { method: "POST", body: form });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    return notify(data.detail || "模板生成失败", 4000);
+  }
+  saveBlob(await response.blob(), uploadedFile.name.replace(/\.docx$/i, "_template.docx"));
+  notify("编写模板 Word 已保存");
 };
 
 function escapeHtml(value) {

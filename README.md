@@ -18,6 +18,8 @@ python -m venv .venv
 - `POST /semantic-review`：规则扫描并调用本机 Ollama 复核
 - `POST /scan-docx`：扫描 `.docx` 正文、表格、页眉和页脚
 - `POST /replace-docx`：替换并下载新的 Word 文件
+- `POST /replace-docx-markdown`：替换 Word 中的敏感词，并按标题层级和表格结构导出 Markdown
+- `POST /template-docx`：保留 Word 标题级别与内容、表格结构与表头、图片题注，删除正文及表格数据行内容
 
 请求示例：
 
