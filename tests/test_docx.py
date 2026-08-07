@@ -4,6 +4,7 @@ import base64
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
@@ -23,6 +24,19 @@ paragraph = document.add_paragraph("正文：")
 paragraph.add_run("示例").bold = True
 paragraph.add_run("敏感词")
 
+# Word 目录项的可见文字通常位于超链接/域结构内，并可能跨多个运行。
+toc_style_for_replace = document.styles.add_style("TOC Replace", WD_STYLE_TYPE.PARAGRAPH)
+toc_paragraph = document.add_paragraph(style=toc_style_for_replace)
+hyperlink = OxmlElement("w:hyperlink")
+hyperlink.set(qn("w:anchor"), "_TocTest")
+for value in ("目录示例", "敏感词"):
+    run_element = OxmlElement("w:r")
+    text_element = OxmlElement("w:t")
+    text_element.text = value
+    run_element.append(text_element)
+    hyperlink.append(run_element)
+toc_paragraph._p.append(hyperlink)
+
 # 多行、合并和嵌套表格覆盖曾经因对象 ID 复用而漏读的场景。
 table = document.add_table(rows=120, cols=2)
 expected_table_matches = 0
@@ -41,7 +55,7 @@ document.sections[0].footer.paragraphs[0].text = "页脚示例敏感词"
 source = BytesIO()
 document.save(source)
 
-expected_total = 1 + expected_table_matches + 2
+expected_total = 2 + expected_table_matches + 2
 scanned = scan_docx(source.getvalue(), engine)
 assert scanned["count"] == expected_total, (scanned["count"], expected_total)
 assert scanned["text_length"] > 1_000
@@ -53,6 +67,10 @@ filtered_text = document_text(filtered)
 assert "示例敏感词" not in filtered_text
 assert filtered_text.count("*****") == expected_total
 assert filtered.paragraphs[0].runs[1].bold is True
+filtered_toc = filtered.paragraphs[1]
+assert "示例敏感词" not in document_text(filtered)
+assert "目录*****" in document_text(filtered)
+assert filtered_toc._p.find(qn("w:hyperlink")) is not None
 
 # 页面只返回有限预览，但文末命中仍必须被检测和替换。
 large_document = Document()

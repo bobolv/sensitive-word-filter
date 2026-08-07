@@ -9,6 +9,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+from docx.text.run import Run
 
 from .engine import SensitiveWordFilter
 
@@ -53,8 +54,18 @@ def iter_document_paragraphs(document):
             yield from _part_paragraphs(part._element, part, seen)
 
 
+def _paragraph_runs(paragraph: Paragraph) -> list[Run]:
+    """包含普通、超链接及域结果中的所有文字运行。"""
+    return [Run(element, paragraph) for element in paragraph._p.iter(qn("w:r"))]
+
+
+def _paragraph_text(paragraph: Paragraph) -> str:
+    return "".join(run.text for run in _paragraph_runs(paragraph))
+
+
 def document_text(document) -> str:
-    return "\n".join(paragraph.text for paragraph in iter_document_paragraphs(document) if paragraph.text)
+    texts = (_paragraph_text(paragraph) for paragraph in iter_document_paragraphs(document))
+    return "\n".join(text for text in texts if text)
 
 
 def _body_items(document):
@@ -121,7 +132,7 @@ def _toc_title_texts(document) -> set[str]:
     titles: set[str] = set()
     for paragraph in iter_document_paragraphs(document):
         if _is_toc_paragraph(paragraph):
-            normalized = _normalized_title_text(paragraph.text)
+            normalized = _normalized_title_text(_paragraph_text(paragraph))
             if normalized:
                 titles.add(normalized)
     return titles
@@ -383,7 +394,8 @@ def scan_docx(
 
 def _replace_range(paragraph, start: int, end: int, replacement: str) -> None:
     positions, cursor = [], 0
-    for run in paragraph.runs:
+    runs = _paragraph_runs(paragraph)
+    for run in runs:
         positions.append((cursor, cursor + len(run.text)))
         cursor += len(run.text)
 
@@ -398,7 +410,7 @@ def _replace_range(paragraph, start: int, end: int, replacement: str) -> None:
 
     first = touched[0][0]
     for index, local_start, local_end in reversed(touched):
-        run = paragraph.runs[index]
+        run = runs[index]
         inserted = replacement if index == first else ""
         run.text = run.text[:local_start] + inserted + run.text[local_end:]
 
@@ -415,7 +427,7 @@ def replace_docx(
 
     # 按段处理，避免大文档再次拼接一份完整文本用于替换。
     for paragraph in iter_document_paragraphs(document):
-        ranges = engine.replacement_ranges(paragraph.text, replacement, min_level)
+        ranges = engine.replacement_ranges(_paragraph_text(paragraph), replacement, min_level)
         total_matches += len(ranges)
         if ranges:
             changed_paragraphs += 1
