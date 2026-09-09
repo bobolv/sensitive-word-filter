@@ -20,6 +20,15 @@ python -m venv .venv
 - `POST /replace-docx`：替换并下载新的 Word 文件
 - `POST /replace-docx-markdown`：替换 Word 中的敏感词，并按标题层级和表格结构导出 Markdown
 - `POST /template-docx`：保留 Word 标题级别与内容、表格结构与表头、图片题注，删除正文及表格数据行内容
+- `POST /format-docx-headings`：离线识别 Word 标题并将其字体统一为“黑体”，保留字号、字重及其他内容格式
+
+Windows 上更新已有 Docker 部署时，在项目目录运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\update-deploy.ps1
+```
+
+脚本只允许快进拉取，随后重新构建并部署容器；现有 `.env` 和 `data\words.json` 不会被覆盖。
 
 请求示例：
 

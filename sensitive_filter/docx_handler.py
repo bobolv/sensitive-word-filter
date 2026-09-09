@@ -29,6 +29,7 @@ MANUAL_HEADING = re.compile(
     r"\d+[、．.]\s*"
     r")"
 )
+HEADING_FONT_NAME = "黑体"
 
 
 def _part_paragraphs(element, owner, seen: set[object]):
@@ -182,6 +183,43 @@ def _looks_like_visual_heading(paragraph: Paragraph, toc_titles: set[str]) -> bo
         and not text.endswith(("。", "；", ";", "，", ","))
         and (_largest_font_size(paragraph) >= 14 or all_bold)
     )
+
+
+def _set_run_font_name(run: Run, font_name: str) -> None:
+    """同时设置 Word 的中西文字体，不改动字号、字重等其他格式。"""
+    run.font.name = font_name
+    fonts = run._element.get_or_add_rPr().get_or_add_rFonts()
+    for attribute in ("ascii", "hAnsi", "eastAsia", "cs"):
+        fonts.set(qn(f"w:{attribute}"), font_name)
+
+
+def _format_document_headings(document, font_name: str = HEADING_FONT_NAME) -> int:
+    toc_titles = _toc_title_texts(document)
+    heading_count = 0
+    for item in _body_items(document):
+        if not isinstance(item, Paragraph) or _is_toc_paragraph(item):
+            continue
+        if not item.text.strip() or not (
+            _heading_level(item) is not None
+            or _looks_like_visual_heading(item, toc_titles)
+        ):
+            continue
+        for run in _paragraph_runs(item):
+            if run.text:
+                _set_run_font_name(run, font_name)
+        heading_count += 1
+    return heading_count
+
+
+def format_docx_headings(
+    content: bytes, font_name: str = HEADING_FONT_NAME
+) -> tuple[bytes, dict]:
+    """离线统一 Word 正文中标题的中西文字体，并保留其余内容和格式。"""
+    document = Document(BytesIO(content))
+    heading_count = _format_document_headings(document, font_name)
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue(), {"heading_count": heading_count, "font_name": font_name}
 
 
 def _markdown_text(value: str) -> str:

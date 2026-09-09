@@ -230,6 +230,20 @@ document.querySelector("#makeTemplate").onclick = async () => {
   notify("编写模板 Word 已保存");
 };
 
+document.querySelector("#formatHeadings").onclick = async () => {
+  if (!uploadedFile || fileKind !== "docx") return notify("请先上传 Word 文件");
+  const form = new FormData();
+  form.append("file", uploadedFile);
+  notify("正在将标题字体统一为黑体，请稍候…", 3000);
+  const response = await fetch("/format-docx-headings", { method: "POST", body: form });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    return notify(data.detail || "标题字体处理失败", 4000);
+  }
+  saveBlob(await response.blob(), uploadedFile.name.replace(/\.docx$/i, "_headings_heiti.docx"));
+  notify("标题已统一为黑体并保存");
+};
+
 function escapeHtml(value) {
   const element = document.createElement("div");
   element.textContent = String(value);

@@ -18,6 +18,7 @@ from sensitive_filter.semantic import review_with_ollama
 from sensitive_filter.docx_handler import (
     create_writing_template,
     docx_to_markdown,
+    format_docx_headings,
     replace_docx,
     scan_docx,
 )
@@ -255,6 +256,23 @@ async def make_word_template(file: UploadFile = File(...)) -> StreamingResponse:
         iter([output]),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename=template.docx; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@app.post("/format-docx-headings")
+async def format_word_headings(file: UploadFile = File(...)) -> StreamingResponse:
+    content = await read_upload(file, "Word ")
+    validate_office_file(file, content, ".docx", "Word ")
+    try:
+        output, _ = format_docx_headings(content)
+    except Exception as exc:
+        raise HTTPException(400, f"无法统一 Word 标题字体：{exc}") from exc
+    filename = f"{Path(file.filename).stem}_headings_heiti.docx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        iter([output]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=headings_heiti.docx; filename*=UTF-8''{encoded_filename}"},
     )
 
 

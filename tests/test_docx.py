@@ -13,6 +13,7 @@ from sensitive_filter.docx_handler import (
     create_writing_template,
     document_text,
     docx_to_markdown,
+    format_docx_headings,
     replace_docx,
     scan_docx,
 )
@@ -120,6 +121,26 @@ structured.add_paragraph().add_run().add_picture(BytesIO(pixel_png), width=Inche
 structured.add_paragraph("图1 系统结构", style="Caption")
 structured_source = BytesIO()
 structured.save(structured_source)
+
+# 标题字体统一：覆盖标准、自定义继承、手工编号和视觉标题，正文及目录不变。
+font_output, font_result = format_docx_headings(structured_source.getvalue())
+font_document = Document(BytesIO(font_output))
+font_paragraphs = {paragraph.text: paragraph for paragraph in font_document.paragraphs}
+for title in (
+    "未使用标题样式的项目方案",
+    "第一章 示例敏感词",
+    "第一节 说明",
+    "1.1.1 自定义样式标题",
+    "一、手工编号标题",
+):
+    for run in font_paragraphs[title].runs:
+        if run.text:
+            fonts = run._element.get_or_add_rPr().get_or_add_rFonts()
+            assert run.font.name == "黑体"
+            assert fonts.get(qn("w:eastAsia")) == "黑体"
+assert font_paragraphs["正文示例敏感词"].runs[0].font.name is None
+assert font_paragraphs["目录中的项目"].runs[0].font.name is None
+assert font_result == {"heading_count": 5, "font_name": "黑体"}
 
 markdown_output, markdown_result = docx_to_markdown(structured_source.getvalue(), engine)
 markdown = markdown_output.decode("utf-8-sig")
